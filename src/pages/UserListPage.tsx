@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -27,127 +27,134 @@ interface User {
 
 const UserListPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const [baseUsers, setBaseUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [originalUsers, setOriginalUsers] = useState<User[]>([]);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Fetch base users from JSONPlaceholder once
-  const fetchBaseUsers = async () => {
+  // get the base user data first
+  const getBaseUsers = async () => {
     try {
-      const response = await fetch('https://jsonplaceholder.typicode.com/users');
-      const data: User[] = await response.json();
-      setBaseUsers(data);
-      return data;
-    } catch (error) {
-      console.error('Error fetching base users:', error);
+      const res = await fetch('https://jsonplaceholder.typicode.com/users');
+      const userData = await res.json();
+      setOriginalUsers(userData);
+      return userData;
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
       return [];
     }
   };
 
-  const generateUsers = (pageNum: number, baseUserData: User[]) => {
-    const usersPerPage = 10;
-    const startIndex = (pageNum - 1) * usersPerPage;
+  const createMoreUsers = (pageNumber: number, baseData: User[]) => {
+    const itemsPerPage = 10;
+    const startIdx = (pageNumber - 1) * itemsPerPage;
     
-    return Array.from({ length: usersPerPage }, (_, index) => {
-      const globalIndex = startIndex + index;
-      const baseUser = baseUserData[globalIndex % baseUserData.length];
-      const batchNumber = Math.floor(globalIndex / baseUserData.length) + 1;
+    const newUserList = [];
+    for (let i = 0; i < itemsPerPage; i++) {
+      const userIdx = startIdx + i;
+      const templateUser = baseData[userIdx % baseData.length];
+      const copyNumber = Math.floor(userIdx / baseData.length) + 1;
       
-      return {
-        ...baseUser,
-        id: globalIndex + 1,
-        name: batchNumber > 1 ? `${baseUser.name} (Batch ${batchNumber})` : baseUser.name,
-        email: `user${globalIndex + 1}@company.com`,
-        username: `${baseUser.username}${globalIndex > 9 ? `_${globalIndex + 1}` : ''}`,
-        phone: baseUser.phone.replace(/\d{3}-\d{3}/, `${String(globalIndex + 1).padStart(3, '0')}-${String((globalIndex + 1) * 2).padStart(3, '0')}`),
-        website: `user${globalIndex + 1}.${baseUser.website}`,
+      const modifiedUser = {
+        ...templateUser,
+        id: userIdx + 1,
+        name: copyNumber > 1 ? `${templateUser.name} (${copyNumber})` : templateUser.name,
+        email: `user${userIdx + 1}@example.com`,
+        username: userIdx > 9 ? `${templateUser.username}_${userIdx + 1}` : templateUser.username,
+        phone: templateUser.phone.replace(/\d{3}-\d{3}/, 
+          `${String(userIdx + 1).padStart(3, '0')}-${String((userIdx + 1) * 2).padStart(3, '0')}`),
+        website: `user${userIdx + 1}.${templateUser.website}`,
         address: {
-          ...baseUser.address,
-          suite: `Suite ${globalIndex + 1}`,
-          zipcode: `${(10000 + globalIndex).toString().slice(0, 5)}-${(1000 + globalIndex).toString().slice(0, 4)}`
+          ...templateUser.address,
+          suite: `Suite ${userIdx + 1}`,
+          zipcode: `${(10000 + userIdx).toString().slice(0, 5)}-${(1000 + userIdx).toString().slice(0, 4)}`
         },
         company: {
-          name: batchNumber > 1 ? `${baseUser.company.name} Branch ${batchNumber}` : baseUser.company.name
+          name: copyNumber > 1 ? `${templateUser.company.name} - Branch ${copyNumber}` : templateUser.company.name
         }
       };
-    });
+      newUserList.push(modifiedUser);
+    }
+    return newUserList;
   };
 
-  const fetchUsers = useCallback(async (pageNum: number) => {
-    if (loading) return;
+  const loadUsers = async (page: number) => {
+    if (isLoading) return;
     
-    setLoading(true);
-    console.log(`Fetching users for page ${pageNum}`);
+    setIsLoading(true);
+    console.log(`Loading page ${page}...`);
+    
+    // simulate some loading time
+    await new Promise(resolve => setTimeout(resolve, 800));
     
     try {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      let currentBaseUsers = baseUsers;
-      if (currentBaseUsers.length === 0) {
-        currentBaseUsers = await fetchBaseUsers();
+      let baseUserData = originalUsers;
+      if (baseUserData.length === 0) {
+        baseUserData = await getBaseUsers();
       }
       
-      if (currentBaseUsers.length === 0) {
-        setLoading(false);
+      if (baseUserData.length === 0) {
+        setIsLoading(false);
         return;
       }
 
-      const newUsers = generateUsers(pageNum, currentBaseUsers);
+      const newUsers = createMoreUsers(page, baseUserData);
       
-      if (pageNum === 1) {
+      if (page === 1) {
         setUsers(newUsers);
       } else {
-        setUsers(prev => [...prev, ...newUsers]);
+        setUsers(prevUsers => [...prevUsers, ...newUsers]);
       }
     } catch (error) {
-      console.error('Error generating users:', error);
+      console.error('Error loading users:', error);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
-  }, [loading, baseUsers]);
+  };
 
+  // load first page on mount
   useEffect(() => {
-    fetchUsers(1);
+    loadUsers(1);
   }, []);
 
+  // handle scroll events
   useEffect(() => {
-    const handleScroll = () => {
-      if (
-        window.innerHeight + document.documentElement.scrollTop
-        >= document.documentElement.offsetHeight - 1000
-      ) {
-        if (!loading) {
-          const nextPage = page + 1;
-          setPage(nextPage);
-          fetchUsers(nextPage);
-        }
+    const handleScrollEvent = () => {
+      const scrollHeight = document.documentElement.scrollHeight;
+      const scrollTop = document.documentElement.scrollTop;
+      const clientHeight = window.innerHeight;
+      
+      if (scrollTop + clientHeight >= scrollHeight - 800 && !isLoading) {
+        const nextPage = currentPage + 1;
+        setCurrentPage(nextPage);
+        loadUsers(nextPage);
       }
     };
 
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [loading, page, fetchUsers]);
+    window.addEventListener('scroll', handleScrollEvent);
+    return () => {
+      window.removeEventListener('scroll', handleScrollEvent);
+    };
+  }, [isLoading, currentPage]);
 
-  const handleLogout = () => {
+  const handleLogoutClick = () => {
     logout();
     navigate('/');
   };
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map(word => word.charAt(0))
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
+  const getUserInitials = (fullName: string) => {
+    const nameParts = fullName.split(' ');
+    let initials = '';
+    for (let i = 0; i < Math.min(2, nameParts.length); i++) {
+      initials += nameParts[i].charAt(0).toUpperCase();
+    }
+    return initials;
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-      {/* Header */}
+      {/* top header */}
       <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
@@ -158,7 +165,7 @@ const UserListPage: React.FC = () => {
               <p className="text-sm text-gray-600">Welcome back, {user?.email}</p>
             </div>
             <Button
-              onClick={handleLogout}
+              onClick={handleLogoutClick}
               variant="outline"
               className="flex items-center gap-2 hover:bg-red-50 hover:border-red-300 hover:text-red-600 transition-colors"
             >
@@ -169,45 +176,45 @@ const UserListPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* main content area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {users.map((user) => (
-            <Card key={user.id} className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 bg-white/80 backdrop-blur-sm border-0 shadow-md">
+          {users.map((userData) => (
+            <Card key={userData.id} className="hover:shadow-lg transition-all duration-300 hover:-translate-y-1 bg-white/80 backdrop-blur-sm border-0 shadow-md">
               <CardContent className="p-6">
                 <div className="flex items-start space-x-4">
                   <Avatar className="h-12 w-12 bg-gradient-to-br from-blue-500 to-purple-600">
                     <AvatarFallback className="text-white font-semibold">
-                      {getInitials(user.name)}
+                      {getUserInitials(userData.name)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg font-semibold text-gray-900 truncate">
-                      {user.name}
+                      {userData.name}
                     </h3>
-                    <p className="text-sm text-gray-500 truncate">@{user.username}</p>
+                    <p className="text-sm text-gray-500 truncate">@{userData.username}</p>
                   </div>
                 </div>
                 
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center text-sm text-gray-600">
                     <Mail className="h-4 w-4 mr-2 text-blue-500" />
-                    <span className="truncate">{user.email}</span>
+                    <span className="truncate">{userData.email}</span>
                   </div>
                   <div className="flex items-center text-sm text-gray-600">
                     <Phone className="h-4 w-4 mr-2 text-green-500" />
-                    <span>{user.phone}</span>
+                    <span>{userData.phone}</span>
                   </div>
                   <div className="flex items-center text-sm text-gray-600">
                     <Globe className="h-4 w-4 mr-2 text-purple-500" />
-                    <span className="truncate">{user.website}</span>
+                    <span className="truncate">{userData.website}</span>
                   </div>
                 </div>
                 
                 <div className="mt-4 pt-4 border-t border-gray-200">
-                  <p className="text-sm font-medium text-gray-900">{user.company.name}</p>
+                  <p className="text-sm font-medium text-gray-900">{userData.company.name}</p>
                   <p className="text-xs text-gray-500">
-                    {user.address.city}, {user.address.zipcode}
+                    {userData.address.city}, {userData.address.zipcode}
                   </p>
                 </div>
               </CardContent>
@@ -215,8 +222,8 @@ const UserListPage: React.FC = () => {
           ))}
         </div>
 
-        {/* Loading Indicator */}
-        {loading && (
+        {/* loading spinner */}
+        {isLoading && (
           <div className="flex justify-center items-center py-8">
             <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
               <CardContent className="p-6">
@@ -229,11 +236,11 @@ const UserListPage: React.FC = () => {
           </div>
         )}
 
-        {/* Current page indicator */}
+        {/* page info */}
         {users.length > 0 && (
           <div className="flex justify-center items-center py-4">
             <p className="text-gray-500 text-sm">
-              Showing {users.length} users (Page {page})
+              Showing {users.length} users (Page {currentPage})
             </p>
           </div>
         )}
