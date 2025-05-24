@@ -29,9 +29,51 @@ const UserListPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
+  const [baseUsers, setBaseUsers] = useState<User[]>([]);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  // Fetch base users from JSONPlaceholder once
+  const fetchBaseUsers = async () => {
+    try {
+      const response = await fetch('https://jsonplaceholder.typicode.com/users');
+      const data: User[] = await response.json();
+      setBaseUsers(data);
+      return data;
+    } catch (error) {
+      console.error('Error fetching base users:', error);
+      return [];
+    }
+  };
+
+  const generateUsers = (pageNum: number, baseUserData: User[]) => {
+    const usersPerPage = 10;
+    const startIndex = (pageNum - 1) * usersPerPage;
+    
+    return Array.from({ length: usersPerPage }, (_, index) => {
+      const globalIndex = startIndex + index;
+      const baseUser = baseUserData[globalIndex % baseUserData.length];
+      const batchNumber = Math.floor(globalIndex / baseUserData.length) + 1;
+      
+      return {
+        ...baseUser,
+        id: globalIndex + 1,
+        name: batchNumber > 1 ? `${baseUser.name} (Batch ${batchNumber})` : baseUser.name,
+        email: `user${globalIndex + 1}@company.com`,
+        username: `${baseUser.username}${globalIndex > 9 ? `_${globalIndex + 1}` : ''}`,
+        phone: baseUser.phone.replace(/\d{3}-\d{3}/, `${String(globalIndex + 1).padStart(3, '0')}-${String((globalIndex + 1) * 2).padStart(3, '0')}`),
+        website: `user${globalIndex + 1}.${baseUser.website}`,
+        address: {
+          ...baseUser.address,
+          suite: `Suite ${globalIndex + 1}`,
+          zipcode: `${(10000 + globalIndex).toString().slice(0, 5)}-${(1000 + globalIndex).toString().slice(0, 4)}`
+        },
+        company: {
+          name: batchNumber > 1 ? `${baseUser.company.name} Branch ${batchNumber}` : baseUser.company.name
+        }
+      };
+    });
+  };
 
   const fetchUsers = useCallback(async (pageNum: number) => {
     if (loading) return;
@@ -40,43 +82,32 @@ const UserListPage: React.FC = () => {
     console.log(`Fetching users for page ${pageNum}`);
     
     try {
-      // Simulate API delay for better UX demonstration
+      // Simulate API delay
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      const response = await fetch(`https://jsonplaceholder.typicode.com/users?_page=${pageNum}&_limit=10`);
-      const newUsers: User[] = await response.json();
+      let currentBaseUsers = baseUsers;
+      if (currentBaseUsers.length === 0) {
+        currentBaseUsers = await fetchBaseUsers();
+      }
       
-      if (newUsers.length === 0) {
-        setHasMore(false);
+      if (currentBaseUsers.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      const newUsers = generateUsers(pageNum, currentBaseUsers);
+      
+      if (pageNum === 1) {
+        setUsers(newUsers);
       } else {
-        // Since JSONPlaceholder only has 10 users, we'll simulate more by duplicating with different IDs
-        const simulatedUsers = Array.from({ length: 10 }, (_, index) => {
-          const baseUser = newUsers[index % newUsers.length];
-          return {
-            ...baseUser,
-            id: (pageNum - 1) * 10 + index + 1,
-            name: `${baseUser.name} ${Math.floor(((pageNum - 1) * 10 + index) / 10) > 0 ? `(${Math.floor(((pageNum - 1) * 10 + index) / 10) + 1})` : ''}`,
-            email: `user${(pageNum - 1) * 10 + index + 1}@example.com`
-          };
-        });
-
-        if (pageNum === 1) {
-          setUsers(simulatedUsers);
-        } else {
-          setUsers(prev => [...prev, ...simulatedUsers]);
-        }
-
-        // Stop after 5 pages (50 users) for demo purposes
-        if (pageNum >= 5) {
-          setHasMore(false);
-        }
+        setUsers(prev => [...prev, ...newUsers]);
       }
     } catch (error) {
-      console.error('Error fetching users:', error);
+      console.error('Error generating users:', error);
     } finally {
       setLoading(false);
     }
-  }, [loading]);
+  }, [loading, baseUsers]);
 
   useEffect(() => {
     fetchUsers(1);
@@ -88,7 +119,7 @@ const UserListPage: React.FC = () => {
         window.innerHeight + document.documentElement.scrollTop
         >= document.documentElement.offsetHeight - 1000
       ) {
-        if (hasMore && !loading) {
+        if (!loading) {
           const nextPage = page + 1;
           setPage(nextPage);
           fetchUsers(nextPage);
@@ -98,7 +129,7 @@ const UserListPage: React.FC = () => {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [hasMore, loading, page, fetchUsers]);
+  }, [loading, page, fetchUsers]);
 
   const handleLogout = () => {
     logout();
@@ -198,19 +229,12 @@ const UserListPage: React.FC = () => {
           </div>
         )}
 
-        {/* End of List Indicator */}
-        {!hasMore && users.length > 0 && (
-          <div className="flex justify-center items-center py-8">
-            <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-lg">
-              <CardContent className="p-6">
-                <p className="text-gray-600 text-center font-medium">
-                  You've reached the end! 🎉
-                </p>
-                <p className="text-gray-500 text-sm text-center mt-1">
-                  Loaded {users.length} users total
-                </p>
-              </CardContent>
-            </Card>
+        {/* Current page indicator */}
+        {users.length > 0 && (
+          <div className="flex justify-center items-center py-4">
+            <p className="text-gray-500 text-sm">
+              Showing {users.length} users (Page {page})
+            </p>
           </div>
         )}
       </main>
